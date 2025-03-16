@@ -14,6 +14,22 @@ ItemAnimator的主要职责包括：
 
 通过这些动画，RecyclerView可以为用户提供更加流畅和直观的交互体验，使数据变化更加自然和易于理解。
 
+```mermaid
+graph TD
+    A[ItemAnimator] --- B[处理添加动画]
+    A --- C[处理移除动画]
+    A --- D[处理移动动画]
+    A --- E[处理更新动画]
+    A --- F[协调多动画]
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333
+    style C fill:#bbf,stroke:#333
+    style D fill:#bbf,stroke:#333
+    style E fill:#bbf,stroke:#333
+    style F fill:#bbf,stroke:#333
+```
+
 ## ItemAnimator的基本实现
 
 RecyclerView.ItemAnimator是一个抽象类，它定义了处理各种动画的基本框架。要实现自定义的动画效果，需要理解以下关键概念和方法：
@@ -61,6 +77,49 @@ public abstract class ItemAnimator {
 }
 ```
 
+```mermaid
+classDiagram
+    class ItemAnimator {
+        <<abstract>>
+        +animateDisappearance() boolean
+        +animateAppearance() boolean
+        +animatePersistence() boolean
+        +animateChange() boolean
+        +runPendingAnimations()
+        +endAnimation()
+        +endAnimations()
+        +isRunning() boolean
+    }
+    
+    class SimpleItemAnimator {
+        <<abstract>>
+        +animateRemove() boolean
+        +animateAdd() boolean
+        +animateMove() boolean
+        +animateChange() boolean
+        +setSupportsChangeAnimations()
+    }
+    
+    class DefaultItemAnimator {
+        -mPendingRemovals: List
+        -mPendingAdditions: List
+        -mPendingMoves: List
+        -mPendingChanges: List
+        +runPendingAnimations()
+        +animateAddImpl()
+        +animateRemoveImpl()
+    }
+    
+    class ItemAnimatorListener {
+        <<interface>>
+        +onAnimationFinished()
+    }
+    
+    ItemAnimator <|-- SimpleItemAnimator
+    SimpleItemAnimator <|-- DefaultItemAnimator
+    ItemAnimator o-- ItemAnimatorListener
+```
+
 ## DefaultItemAnimator
 
 Android提供了DefaultItemAnimator作为RecyclerView的默认动画实现。它为各种操作提供了简单的淡入淡出和平移动画效果。
@@ -85,6 +144,16 @@ animator.setRemoveDuration(300);
 animator.setMoveDuration(300);
 animator.setChangeDuration(300);
 recyclerView.setItemAnimator(animator);
+```
+
+```mermaid
+graph TB
+    subgraph "DefaultItemAnimator动画效果"
+    A1[添加项目] --> B1[透明度: 0->1]
+    A2[移除项目] --> B2[透明度: 1->0]
+    A3[移动项目] --> B3[位置: 从旧位置平移到新位置]
+    A4[更新项目] --> B4[透明度: 1->0->1]
+    end
 ```
 
 ## SimpleItemAnimator
@@ -210,6 +279,23 @@ public class ModifiedDefaultItemAnimator extends DefaultItemAnimator {
 }
 ```
 
+```mermaid
+flowchart TD
+    A[创建自定义ItemAnimator] --> B{选择继承方式}
+    
+    B -->|继承SimpleItemAnimator| C[实现所有必要方法]
+    C --> C1[animateAdd]
+    C --> C2[animateRemove]
+    C --> C3[animateMove]
+    C --> C4[animateChange]
+    C --> C5[其他控制方法]
+    
+    B -->|继承DefaultItemAnimator| D[只重写需要修改的方法]
+    D --> D1[例如: 只修改animateAdd]
+    
+    C1 & C2 & C3 & C4 & C5 & D1 --> E[应用到RecyclerView]
+```
+
 ## 动画流程详解
 
 理解ItemAnimator的工作流程对于创建自定义动画至关重要：
@@ -240,6 +326,29 @@ RecyclerView将不同类型的动画任务分发给ItemAnimator：
 
 当动画完成时，ItemAnimator通知RecyclerView，以便它可以进行必要的清理和更新。
 
+```mermaid
+sequenceDiagram
+    participant A as Adapter
+    participant RV as RecyclerView
+    participant IA as ItemAnimator
+    
+    A->>RV: notifyItemXXX()
+    RV->>RV: 预布局 (Pre-Layout)
+    Note over RV: 记录变化前状态
+    RV->>RV: 实际布局 (Post-Layout)
+    Note over RV: 应用变化后状态
+    RV->>RV: 计算差异
+    
+    RV->>IA: animateAppearance()/animateDisappearance()/etc.
+    Note over IA: 准备动画任务
+    
+    RV->>IA: runPendingAnimations()
+    Note over IA: 执行所有待处理动画
+    
+    IA-->>RV: 动画完成回调
+    Note over RV: 完成布局更新
+```
+
 ## 性能优化
 
 实现高效的ItemAnimator需要注意以下几点：
@@ -250,6 +359,26 @@ RecyclerView将不同类型的动画任务分发给ItemAnimator：
 4. **合理分组动画**：使用AnimatorSet同时执行多个相关动画
 5. **避免在动画期间创建新对象**：可能导致内存抖动
 6. **考虑硬件加速**：对于复杂动画，确保开启硬件加速
+
+```mermaid
+graph TD
+    A[性能优化策略] --> B[减少复杂度]
+    A --> C[选择合适的API]
+    A --> D[设置合理的时长]
+    A --> E[资源管理]
+    
+    B --> B1[简化动画效果]
+    B --> B2[减少同时动画数量]
+    
+    C --> C1[使用属性动画]
+    C --> C2[使用硬件加速]
+    
+    D --> D1[不要太长: <500ms]
+    D --> D2[不要太短: >150ms]
+    
+    E --> E1[避免频繁对象创建]
+    E --> E2[提前计算动画参数]
+```
 
 ## 常见自定义动画示例
 
@@ -303,6 +432,20 @@ public class FlipInItemAnimator extends SimpleItemAnimator {
     
     // ... 其他必要方法的实现
 }
+```
+
+```mermaid
+graph LR
+    subgraph "常见动画效果"
+    A[缩放动画] --> A1[ScaleX: 0->1]
+    A --> A2[ScaleY: 0->1]
+    
+    B[翻转动画] --> B1[RotationY: -90->0]
+    
+    C[滑动动画] --> C1[TranslationX/Y]
+    
+    D[淡入淡出] --> D1[Alpha: 0->1 或 1->0]
+    end
 ```
 
 ## 注意事项与最佳实践
