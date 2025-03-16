@@ -6,7 +6,7 @@
 
 ### 1. RecyclerView基础
 - [1_1 RecyclerView整体架构](./1_RecyclerView基础/1_1_RecyclerView整体架构.md)
-  - [1_1_1 设计模式](./1_RecyclerView基础/1_1_1_MVC设计模式.md)
+  - [1_1_1 设计模式](./1_RecyclerView基础/1_1_1_设计模式.md)
     - [1_1_1_1 Adapter模式](./1_RecyclerView基础/1_1_1_1_Adapter模式.md)
     - [1_1_1_2 观察者模式](./1_RecyclerView基础/1_1_1_2_观察者模式.md)
   - [1_1_2 核心类简介](./1_RecyclerView基础/1_1_2_核心类简介.md)
