@@ -16,6 +16,74 @@ DiffUtil是一个基于Eugene W. Myers差分算法的实用工具类，它能够
 - 自动计算并触发适当的Item动画（添加、移除、移动）
 - 在后台线程执行差异计算，不阻塞UI线程
 
+## DiffUtil工作流程图
+
+```mermaid
+flowchart TD
+    A[旧列表和新列表] --> B[创建DiffUtil.Callback]
+    B --> C[调用DiffUtil.calculateDiff]
+    C --> D[差异计算 - Myers算法]
+    D --> E[创建DiffResult]
+    E --> F[dispatchUpdatesTo]
+    F --> G1[插入操作]
+    F --> G2[移除操作]
+    F --> G3[移动操作]
+    F --> G4[更新操作]
+    G1 --> H[Adapter更新]
+    G2 --> H
+    G3 --> H
+    G4 --> H
+    H --> I[RecyclerView刷新]
+    
+    subgraph "AsyncListDiffer工作流程"
+    J[提交新列表] --> K[后台线程]
+    K --> L[差异计算]
+    L --> M[主线程]
+    M --> N[更新Adapter]
+    end
+```
+
+```mermaid
+classDiagram
+    class DiffUtil {
+        +calculateDiff(Callback) DiffResult
+        +calculateDiff(Callback, boolean) DiffResult
+    }
+    
+    class Callback {
+        <<abstract>>
+        +getOldListSize() int
+        +getNewListSize() int
+        +areItemsTheSame(int, int) boolean
+        +areContentsTheSame(int, int) boolean
+        +getChangePayload(int, int) Object
+    }
+    
+    class DiffResult {
+        -mSnakes List~Snake~
+        +dispatchUpdatesTo(RecyclerView.Adapter)
+        +dispatchUpdatesTo(ListUpdateCallback)
+    }
+    
+    class AsyncListDiffer~T~ {
+        -mUpdateCallback ListUpdateCallback
+        -mList List~T~
+        +submitList(List~T~)
+        +getCurrentList() List~T~
+    }
+    
+    class ListAdapter~T, VH~ {
+        -mDiffer AsyncListDiffer~T~
+        +submitList(List~T~)
+        +getItem(int) T
+    }
+    
+    DiffUtil ..> Callback
+    DiffUtil ..> DiffResult
+    AsyncListDiffer ..> DiffUtil
+    ListAdapter --> AsyncListDiffer
+```
+
 ## 核心类和接口
 
 ### DiffUtil

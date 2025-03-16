@@ -25,6 +25,26 @@ public void removeAndRecycleViewAt(int index, Recycler recycler) {
 
 这个方法首先将视图从RecyclerView中移除，然后调用Recycler的recycleView方法进行回收。
 
+```mermaid
+flowchart TD
+    A[开始回收ViewHolder] --> B[LayoutManager.removeAndRecycleViewAt]
+    B --> C[从RecyclerView移除View]
+    C --> D[recycler.recycleView]
+    D --> E{ViewHolder是否可回收?}
+    E -->|是| F[recycleViewHolderInternal]
+    E -->|否| G[标记为待回收]
+    F --> H{是否可放入mCachedViews?}
+    H -->|是| I[mCachedViews已满?]
+    H -->|否| J[添加到RecycledViewPool]
+    I -->|是| K[将最旧项移入RecycledViewPool]
+    I -->|否| L[添加到mCachedViews]
+    K --> L
+    J --> M[addViewHolderToRecycledViewPool]
+    L --> N[回收完成]
+    M --> N
+    G --> N
+```
+
 ## 详细回收流程
 
 ViewHolder的回收是一个多步骤的过程，下面详细分析这个过程：
@@ -197,6 +217,39 @@ void resetInternal() {
 ```
 
 这个重置过程确保了ViewHolder不会保留之前的状态，这样在下次使用时能够重新绑定数据而不会出现状态混乱。
+
+```mermaid
+stateDiagram-v2
+    [*] --> 使用中: 创建并绑定
+    使用中 --> 临时移除: 暂时从RecyclerView移除
+    临时移除 --> 使用中: 快速复用
+    使用中 --> 缓存: 滑出屏幕
+    缓存 --> 使用中: 从mCachedViews获取(无需重绑定)
+    缓存 --> 回收池: mCachedViews已满或不满足条件
+    回收池 --> 重置: 放入RecycledViewPool前重置
+    重置 --> 使用中: 从RecycledViewPool获取并重绑定
+    使用中 --> [*]: 不再使用(GC回收)
+    
+    note right of 临时移除
+        存储在mAttachedScrap
+        或mChangedScrap中
+    end note
+    
+    note right of 缓存
+        存储在mCachedViews中
+        保留所有状态
+    end note
+    
+    note right of 回收池
+        按ViewType分组存储
+        在RecycledViewPool中
+    end note
+    
+    note right of 重置
+        调用resetInternal()
+        清除所有状态
+    end note
+```
 
 ## 回收过程中的优化
 

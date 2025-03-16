@@ -34,15 +34,94 @@ PagerSnapHelper pagerSnapHelper = new PagerSnapHelper();
 pagerSnapHelper.attachToRecyclerView(recyclerView);
 ```
 
-## SnapHelper的类层次结构
+## SnapHelper的类层次结构与工作流程
 
-SnapHelper是一个抽象类，其类层次结构如下：
-
+```mermaid
+classDiagram
+    class RecyclerView.OnFlingListener {
+        <<abstract>>
+        +onFling(velocityX, velocityY) boolean
+    }
+    
+    class SnapHelper {
+        <<abstract>>
+        -mRecyclerView RecyclerView
+        -mGravityScroller Scroller
+        -mScrollListener OnScrollListener
+        +attachToRecyclerView(RecyclerView)
+        +findSnapView(LayoutManager) View
+        +calculateDistanceToFinalSnap(LayoutManager, View) int[]
+        +findTargetSnapPosition(LayoutManager, velocityX, velocityY) int
+        -snapToTargetExistingView() void
+    }
+    
+    class LinearSnapHelper {
+        +findSnapView(LayoutManager) View
+        +calculateDistanceToFinalSnap(LayoutManager, View) int[]
+        +findTargetSnapPosition(LayoutManager, velocityX, velocityY) int
+        -distanceToCenter(LayoutManager, View, OrientationHelper) int
+        -findCenterView(LayoutManager, OrientationHelper) View
+    }
+    
+    class PagerSnapHelper {
+        -MILLISECONDS_PER_INCH float
+        +findSnapView(LayoutManager) View
+        +calculateDistanceToFinalSnap(LayoutManager, View) int[]
+        +findTargetSnapPosition(LayoutManager, velocityX, velocityY) int
+        -snapFromFling(LayoutManager, velocityX, velocityY) boolean
+    }
+    
+    RecyclerView.OnFlingListener <|-- SnapHelper
+    SnapHelper <|-- LinearSnapHelper
+    SnapHelper <|-- PagerSnapHelper
 ```
-java.lang.Object
-  ↳ androidx.recyclerview.widget.SnapHelper
-      ↳ androidx.recyclerview.widget.LinearSnapHelper
-      ↳ androidx.recyclerview.widget.PagerSnapHelper
+
+```mermaid
+flowchart TD
+    A[附加SnapHelper到RecyclerView] --> B[设置OnFlingListener和OnScrollListener]
+    
+    subgraph "滚动结束时"
+    C[RecyclerView滚动状态变为IDLE] --> D[调用snapToTargetExistingView]
+    D --> E[调用findSnapView找到需要对齐的视图]
+    E --> F[调用calculateDistanceToFinalSnap计算对齐距离]
+    F --> G[执行平滑滚动使视图对齐]
+    end
+    
+    subgraph "Fling操作时"
+    H[用户快速滑动RecyclerView] --> I[拦截onFling事件]
+    I --> J[调用findTargetSnapPosition确定目标位置]
+    J --> K[创建SmoothScroller滚动到目标位置]
+    end
+    
+    B --> C
+    B --> H
+```
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant RV as RecyclerView
+    participant SH as SnapHelper
+    participant LSH as LinearSnapHelper
+    
+    User->>RV: 滚动/Fling操作
+    
+    alt 滚动操作
+        RV->>SH: onScrollStateChanged(IDLE)
+        SH->>LSH: findSnapView()
+        LSH-->>SH: 返回目标View
+        SH->>LSH: calculateDistanceToFinalSnap()
+        LSH-->>SH: 返回滚动距离[dx, dy]
+        SH->>RV: smoothScrollBy(dx, dy)
+    else Fling操作
+        RV->>SH: onFling(velocityX, velocityY)
+        SH->>LSH: findTargetSnapPosition()
+        LSH-->>SH: 返回目标位置
+        SH->>SH: createScroller()
+        SH->>RV: startSmoothScroll()
+    end
+    
+    RV-->>User: 视图对齐显示
 ```
 
 ## SnapHelper的核心原理

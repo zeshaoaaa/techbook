@@ -170,6 +170,10 @@
   },
   "active": "8bf7bd3302669d8e",
   "lastOpenFiles": [
+    "RecyclerView源码解析/3_RecyclerView性能优化/3_1_2_DiffUtil工作原理~.md",
+    "RecyclerView源码解析/2_RecyclerView核心机制/RecyclerView_事件处理流程图.md",
+    "RecyclerView源码解析/2_RecyclerView核心机制/2_1_1_1_6_缓存流程图~.md",
+    "RecyclerView源码解析/2_RecyclerView核心机制/2_1_1_1_3_第二级缓存~.md",
     "RecyclerView 源码/RecyclerView.java",
     "RecyclerView 源码/LinearSmoothScroller.java",
     "RecyclerView 源码/LinearLayoutManager.java",

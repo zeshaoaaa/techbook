@@ -28,6 +28,62 @@ RecyclerView是Android中最常用的列表控件，但在处理大量数据或�
 2. 在主线程空闲时执行预取操作
 3. 将预取的视图存入缓存以备使用
 
+### 预取机制工作流程图
+
+```mermaid
+flowchart TD
+    A[用户滚动RecyclerView] --> B[记录滚动方向和速度]
+    B --> C[预测将要显示的Items]
+    C --> D[在主线程空闲时]
+    D --> E[预创建ViewHolder]
+    E --> F[预绑定数据]
+    F --> G[放入RecyclerView缓存]
+    G --> H[用户继续滚动]
+    H --> I[从缓存中取出预取的ViewHolder]
+    I --> J[直接显示，无需等待创建和绑定]
+    
+    subgraph "预取任务调度"
+    K[帧渲染完成] --> L{是否有预取任务?}
+    L -->|是| M[执行预取任务]
+    M --> N[等待下一帧]
+    N --> K
+    L -->|否| N
+    end
+```
+
+```mermaid
+sequenceDiagram
+    participant RV as RecyclerView
+    participant LM as LayoutManager
+    participant PF as GapWorker(预取工作器)
+    participant CH as Choreographer
+    participant Adapter
+    
+    RV->>RV: onScrolled/fling
+    RV->>PF: postFromTraversal(dx, dy)
+    PF->>CH: postFrameCallback
+    
+    loop 每一帧结束后
+        CH->>PF: doFrame(frameTimeNanos)
+        PF->>PF: 计算任务截止时间
+        PF->>RV: 收集预取位置
+        RV->>LM: collectInitialPrefetchPositions
+        LM->>PF: addPosition(position, distance)
+        PF->>PF: 按优先级排序任务
+        
+        loop 每个预取任务
+            PF->>RV: tryGetViewHolderForPositionByDeadline
+            RV->>Adapter: createViewHolder
+            Adapter-->>RV: ViewHolder
+            RV->>Adapter: bindViewHolder
+            Adapter-->>RV: 绑定完成
+            RV->>RV: 将ViewHolder放入缓存
+        end
+    end
+    
+    Note over RV,Adapter: 当用户滚动到预取位置时，<br/>可以直接从缓存获取视图
+```
+
 ### 2.2 预取机制的源码解析
 
 #### 2.2.1 预取任务的调度

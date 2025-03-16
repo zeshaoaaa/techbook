@@ -59,6 +59,74 @@ public abstract static class ItemDecoration {
 2. **onDraw**: 在RecyclerView绘制子项内容之前被调用，用于绘制位于Item内容下层的装饰。
 3. **onDrawOver**: 在RecyclerView绘制完所有子项内容后被调用，用于绘制位于Item内容上层的装饰。
 
+```mermaid
+classDiagram
+    class RecyclerView {
+        -List~ItemDecoration~ mItemDecorations
+        +addItemDecoration(ItemDecoration)
+        +removeItemDecoration(ItemDecoration)
+        -draw(Canvas)
+        -onDraw(Canvas)
+    }
+    
+    class ItemDecoration {
+        <<abstract>>
+        +onDraw(Canvas, RecyclerView, State)
+        +onDrawOver(Canvas, RecyclerView, State)
+        +getItemOffsets(Rect, View, RecyclerView, State)
+    }
+    
+    class DividerItemDecoration {
+        -Drawable mDivider
+        +DividerItemDecoration(Context, int)
+        +onDraw(Canvas, RecyclerView, State)
+        +getItemOffsets(Rect, View, RecyclerView, State)
+    }
+    
+    class StickyHeaderItemDecoration {
+        +onDrawOver(Canvas, RecyclerView, State)
+    }
+    
+    RecyclerView "1" *-- "0..*" ItemDecoration : contains
+    ItemDecoration <|-- DividerItemDecoration
+    ItemDecoration <|-- StickyHeaderItemDecoration
+```
+
+```mermaid
+sequenceDiagram
+    participant LayoutManager
+    participant RecyclerView
+    participant ItemDecoration
+    participant View as ItemView
+    
+    Note over RecyclerView: 测量和布局阶段
+    RecyclerView->>LayoutManager: onLayoutChildren()
+    loop 每个子View
+        LayoutManager->>RecyclerView: addView(child)
+        RecyclerView->>RecyclerView: measureChild(child)
+        loop 每个ItemDecoration
+            RecyclerView->>ItemDecoration: getItemOffsets(outRect, child, parent, state)
+            ItemDecoration-->>RecyclerView: 返回Item的边距信息
+            RecyclerView->>View: 应用边距信息
+        end
+    end
+    
+    Note over RecyclerView: 绘制阶段
+    RecyclerView->>RecyclerView: onDraw(canvas)
+    loop 每个ItemDecoration
+        RecyclerView->>ItemDecoration: onDraw(canvas, parent, state)
+        ItemDecoration->>RecyclerView: 绘制Item下层装饰
+    end
+    
+    RecyclerView->>View: 绘制所有子View
+    
+    RecyclerView->>RecyclerView: draw(canvas)
+    loop 每个ItemDecoration
+        RecyclerView->>ItemDecoration: onDrawOver(canvas, parent, state)
+        ItemDecoration->>RecyclerView: 绘制Item上层装饰
+    end
+```
+
 ### 1.3 ItemDecoration在RecyclerView绘制流程中的位置
 
 ```java
@@ -323,326 +391,84 @@ public class SelectedItemDecoration extends RecyclerView.ItemDecoration {
 
 ## 二、滚动拦截机制
 
-### 2.1 Android的事件分发机制回顾
-
-在深入理解RecyclerView的滚动拦截之前，有必要回顾一下Android的事件分发机制。Android的触摸事件分发过程包括三个主要阶段：
-
-1. **分发（Dispatch）**：由ViewGroup的dispatchTouchEvent方法处理
-2. **拦截（Intercept）**：由ViewGroup的onInterceptTouchEvent方法处理
-3. **消费（Consume）**：由View的onTouchEvent方法处理
-
-事件分发的基本流程是：
-- 事件从Activity开始，传递到ViewGroup
-- ViewGroup决定是否拦截事件
-- 如果不拦截，事件继续传递给子View
-- 如果拦截，事件由ViewGroup自己处理
-- 子View可以选择消费或不消费事件
-- 未消费的事件会回传给父ViewGroup处理
-
-### 2.2 RecyclerView的滚动拦截机制
-
-RecyclerView作为一个ViewGroup，实现了自己的事件分发和拦截逻辑，以支持复杂的滚动和交互需求。
-
-#### 2.2.1 基本拦截流程
-
-```java
-// RecyclerView.java（简化版）
-@Override
-public boolean onInterceptTouchEvent(MotionEvent e) {
-    if (mLayoutFrozen) {
-        return false;
-    }
-
-    // 如果有子项正在执行动画，拦截事件
-    if (mLayout.canScrollHorizontally() || mLayout.canScrollVertically()) {
-        // ...省略计算速度的代码
-        
-        switch (action) {
-            case MotionEvent.ACTION_DOWN:
-                // 记录初始触摸点
-                mInitialTouchX = mLastTouchX = x;
-                mInitialTouchY = mLastTouchY = y;
-                // 处理嵌套滚动
-                if (mScrollState == SCROLL_STATE_SETTLING) {
-                    getParent().requestDisallowInterceptTouchEvent(true);
-                    setScrollState(SCROLL_STATE_DRAGGING);
-                }
-                // 停止惯性滚动
-                stopNestedScroll();
-                break;
-            
-            case MotionEvent.ACTION_MOVE:
-                final int dx = Math.round(x - mInitialTouchX);
-                final int dy = Math.round(y - mInitialTouchY);
-                // 如果滚动超过阈值，开始拖动
-                if (!mIsBeingDragged && (Math.abs(dx) > mTouchSlop || Math.abs(dy) > mTouchSlop)) {
-                    final ViewParent parent = getParent();
-                    if (parent != null) {
-                        parent.requestDisallowInterceptTouchEvent(true);
-                    }
-                    mIsBeingDragged = true;
-                    setScrollState(SCROLL_STATE_DRAGGING);
-                }
-                break;
-        }
-    }
-
-    return mIsBeingDragged;
-}
+```mermaid
+flowchart TD
+    A[触摸事件] --> B[ViewGroup dispatchTouchEvent]
+    
+    B --> C{onInterceptTouchEvent?}
+    C -->|返回true| D[拦截事件]
+    C -->|返回false| E[不拦截]
+    
+    D --> F[事件交给自己的onTouchEvent处理]
+    E --> G[事件传递给子View]
+    
+    G --> H{子View是否消费?}
+    H -->|是| I[子View处理事件]
+    H -->|否| J[事件回传给父View的onTouchEvent]
+    
+    subgraph "RecyclerView的滚动拦截"
+    K[ACTION_DOWN] --> L[记录初始触摸坐标]
+    L --> M[设置为未拦截状态]
+    
+    N[ACTION_MOVE] --> O{判断滑动方向}
+    O -->|垂直RecyclerView<br>水平滑动| P[不拦截]
+    O -->|垂直RecyclerView<br>垂直滑动| Q[拦截并处理滚动]
+    O -->|水平RecyclerView<br>水平滑动| R[拦截并处理滚动]
+    O -->|水平RecyclerView<br>垂直滑动| S[不拦截]
+    
+    Q --> T[计算滚动距离并滚动]
+    R --> T
+    end
+    
+    F -.-> K
 ```
 
-从源码可以看出，RecyclerView在以下情况下会拦截触摸事件：
-
-1. 当用户移动距离超过了触摸滑动阈值（mTouchSlop）
-2. 当正在进行平滑滚动（SCROLL_STATE_SETTLING）时接收到新的触摸事件
-3. 当嵌套滚动开始时
-
-#### 2.2.2 嵌套滚动处理
-
-RecyclerView实现了NestedScrollingChild接口，支持嵌套滚动机制。这使得RecyclerView可以与其他嵌套滚动容器协同工作，如CoordinatorLayout。
-
-```java
-// RecyclerView.java（简化版）
-@Override
-public boolean startNestedScroll(int axes, int type) {
-    return getScrollingChildHelper().startNestedScroll(axes, type);
-}
-
-@Override
-public void stopNestedScroll(int type) {
-    getScrollingChildHelper().stopNestedScroll(type);
-}
-
-@Override
-public boolean dispatchNestedPreScroll(int dx, int dy, int[] consumed, int[] offsetInWindow, int type) {
-    return getScrollingChildHelper().dispatchNestedPreScroll(dx, dy, consumed, offsetInWindow, type);
-}
+```mermaid
+sequenceDiagram
+    participant P as 父容器
+    participant RV as RecyclerView
+    participant C as 子View
+    
+    Note over P, C: 滚动冲突处理流程
+    
+    P->>RV: dispatchTouchEvent(ACTION_DOWN)
+    RV->>RV: onInterceptTouchEvent(ACTION_DOWN)
+    RV-->>P: 返回false(不拦截)
+    RV->>C: 传递ACTION_DOWN
+    
+    P->>RV: dispatchTouchEvent(ACTION_MOVE)
+    RV->>RV: onInterceptTouchEvent(ACTION_MOVE)
+    
+    alt 判断为RecyclerView方向的滑动
+        RV-->>P: 返回true(拦截)
+        RV->>RV: onTouchEvent(ACTION_MOVE)
+        RV->>RV: scrollBy()
+    else 判断为垂直于RecyclerView方向的滑动
+        RV-->>P: 返回false(不拦截)
+        RV->>C: 传递ACTION_MOVE
+        C->>C: 处理滑动
+    end
+    
+    Note over RV: 内部拦截法
+    
+    C->>C: dispatchTouchEvent(ACTION_DOWN)
+    C->>RV: 请求父容器不要拦截(requestDisallowInterceptTouchEvent)
+    
+    P->>RV: dispatchTouchEvent(ACTION_MOVE)
+    RV->>RV: 检查子View请求
+    RV-->>P: 不拦截
+    RV->>C: 传递ACTION_MOVE
+    
+    C->>C: 判断是自己的滑动还是父容器的滑动
+    alt 判断为父容器的滑动
+        C->>RV: 取消请求(requestDisallowInterceptTouchEvent(false))
+        RV->>RV: onInterceptTouchEvent可以拦截
+    else 判断为自己的滑动
+        C->>C: 处理滑动
+    end
 ```
 
-嵌套滚动机制允许父视图和子视图共同处理滚动事件，这对于实现如下效果非常有用：
-- Toolbar随着滚动收起/展开
-- 顶部视图在滚动时逐渐淡出
-- 底部导航栏根据滚动方向显示/隐藏
-
-### 2.3 OnItemTouchListener接口
-
-RecyclerView提供了OnItemTouchListener接口，允许开发者拦截和处理触摸事件，而不影响RecyclerView本身的滚动功能。
-
-```java
-public interface OnItemTouchListener {
-    boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e);
-    void onTouchEvent(RecyclerView rv, MotionEvent e);
-    void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept);
-}
-```
-
-当为RecyclerView添加OnItemTouchListener时，事件会首先传递给这些监听器：
-
-```java
-// RecyclerView.java（简化版）
-@Override
-public boolean dispatchTouchEvent(MotionEvent e) {
-    // 如果有触摸事件拦截器，事件首先传递给它们
-    if (mInterceptingOnItemTouchListener == null) {
-        for (int i = 0; i < mOnItemTouchListeners.size(); i++) {
-            OnItemTouchListener listener = mOnItemTouchListeners.get(i);
-            if (listener.onInterceptTouchEvent(this, e)) {
-                mInterceptingOnItemTouchListener = listener;
-                break;
-            }
-        }
-    }
-    
-    // 如果有拦截的监听器，事件由它处理
-    if (mInterceptingOnItemTouchListener != null) {
-        mInterceptingOnItemTouchListener.onTouchEvent(this, e);
-    } else {
-        // 否则，事件由RecyclerView自己处理
-        super.dispatchTouchEvent(e);
-    }
-    
-    return true;
-}
-```
-
-这种设计使得开发者可以在不影响RecyclerView本身功能的情况下，实现如下交互：
-- 滑动删除
-- 长按拖动
-- 按钮点击处理
-- 自定义手势识别
-
-### 2.4 ItemTouchHelper与滚动拦截的结合
-
-ItemTouchHelper是RecyclerView.ItemDecoration的子类，同时也实现了OnItemTouchListener接口。它结合了装饰和触摸事件处理，提供了拖拽和滑动删除功能。
-
-```java
-// ItemTouchHelper.java（简化版）
-@Override
-public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent event) {
-    mGestureDetector.onTouchEvent(event);
-    if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-        mActivePointerId = event.getPointerId(0);
-        mInitialTouchX = mLastTouchX = (int) (event.getX() + 0.5f);
-        mInitialTouchY = mLastTouchY = (int) (event.getY() + 0.5f);
-        
-        // 查找当前触摸位置下的视图
-        RecoverAnimation animation = findAnimation(event);
-        if (animation != null) {
-            mInitialTouchX -= animation.mX;
-            mInitialTouchY -= animation.mY;
-        }
-        
-        mSelected = findSwipedView(event);
-        if (mSelected != null && mCallback.canDrag(mSelected)) {
-            // 开始拖动操作
-            return true;
-        }
-    }
-    return false;
-}
-```
-
-ItemTouchHelper巧妙地结合了ItemDecoration和OnItemTouchListener，使得它既能提供视觉反馈，又能处理触摸事件，是RecyclerView扩展功能的典范。
-
-### 2.5 自定义触摸事件处理
-
-以下是一个自定义OnItemTouchListener的例子，实现了单击和长按事件：
-
-```java
-public class RecyclerItemClickListener implements RecyclerView.OnItemTouchListener {
-    private GestureDetector mGestureDetector;
-    private OnItemClickListener mListener;
-    
-    public RecyclerItemClickListener(Context context, final OnItemClickListener listener) {
-        mListener = listener;
-        mGestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onSingleTapUp(MotionEvent e) {
-                return true;
-            }
-            
-            @Override
-            public void onLongPress(MotionEvent e) {
-                View childView = findChildViewUnder(e.getX(), e.getY());
-                if (childView != null && mListener != null) {
-                    mListener.onItemLongClick(childView, getChildAdapterPosition(childView));
-                }
-            }
-        });
-    }
-    
-    @Override
-    public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e) {
-        View childView = rv.findChildViewUnder(e.getX(), e.getY());
-        if (childView != null && mListener != null && mGestureDetector.onTouchEvent(e)) {
-            mListener.onItemClick(childView, rv.getChildAdapterPosition(childView));
-            return true;
-        }
-        return false;
-    }
-    
-    @Override
-    public void onTouchEvent(RecyclerView rv, MotionEvent e) {
-        // 不需要实现
-    }
-    
-    @Override
-    public void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-        // 不需要实现
-    }
-    
-    public interface OnItemClickListener {
-        void onItemClick(View view, int position);
-        void onItemLongClick(View view, int position);
-    }
-}
-```
-
-### 2.6 滚动拦截的高级应用
-
-#### 2.6.1 实现ViewPager嵌套RecyclerView
-
-在实现ViewPager嵌套RecyclerView的场景中，需要协调两者的滚动行为：
-
-```java
-public class NestedRecyclerView extends RecyclerView {
-    private int mInitialX;
-    private int mInitialY;
-    private ViewPager mViewPager;
-    
-    public NestedRecyclerView(Context context) {
-        super(context);
-    }
-    
-    // 设置关联的ViewPager
-    public void setViewPager(ViewPager viewPager) {
-        mViewPager = viewPager;
-    }
-    
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (mViewPager == null) {
-            return super.dispatchTouchEvent(ev);
-        }
-        
-        final int action = ev.getActionMasked();
-        
-        if (action == MotionEvent.ACTION_DOWN) {
-            mInitialX = (int) ev.getX();
-            mInitialY = (int) ev.getY();
-            getParent().requestDisallowInterceptTouchEvent(true);
-        } else if (action == MotionEvent.ACTION_MOVE) {
-            int dx = (int) (ev.getX() - mInitialX);
-            int dy = (int) (ev.getY() - mInitialY);
-            
-            // 如果是横向滑动，并且RecyclerView不能横向滚动，让ViewPager处理事件
-            if (Math.abs(dx) > Math.abs(dy)) {
-                if (!canScrollHorizontally(dx < 0 ? 1 : -1)) {
-                    getParent().requestDisallowInterceptTouchEvent(false);
-                }
-            }
-        }
-        
-        return super.dispatchTouchEvent(ev);
-    }
-}
-```
-
-#### 2.6.2 实现内部可横滑的列表项
-
-当RecyclerView的列表项内部包含可横向滑动的内容（如轮播图）时，需要协调内外两层的滚动：
-
-```java
-public class HorizontalScrollItemView extends FrameLayout {
-    private int mInitialX;
-    private int mInitialY;
-    private HorizontalScrollView mScrollView;
-    
-    public HorizontalScrollItemView(Context context) {
-        super(context);
-    }
-    
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent ev) {
-        final int action = ev.getActionMasked();
-        
-        if (action == MotionEvent.ACTION_DOWN) {
-            mInitialX = (int) ev.getX();
-            mInitialY = (int) ev.getY();
-            // 初始不拦截，让子View有机会处理事件
-            return false;
-        } else if (action == MotionEvent.ACTION_MOVE) {
-            int dx = (int) (ev.getX() - mInitialX);
-            int dy = (int) (ev.getY() - mInitialY);
-            
-            // 如果是横向滑动，拦截事件
-            return Math.abs(dx) > Math.abs(dy);
-        }
-        
-        return super.onInterceptTouchEvent(ev);
-    }
-}
-```
+### 2.1 触摸事件分发机制回顾
 
 ## 三、总结
 

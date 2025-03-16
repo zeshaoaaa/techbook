@@ -27,6 +27,57 @@ View getViewForPosition(int position, boolean dryRun) {
 
 这个方法实际上委托给了`tryGetViewHolderForPositionByDeadline`方法，这是整个获取流程的核心方法。
 
+```mermaid
+sequenceDiagram
+    participant LM as LayoutManager
+    participant R as Recycler
+    participant AS as mAttachedScrap
+    participant CV as mCachedViews
+    participant VCE as ViewCacheExtension
+    participant RVP as RecycledViewPool
+    participant A as Adapter
+    
+    LM->>R: getViewForPosition(position)
+    activate R
+    
+    R->>AS: 查找position匹配的ViewHolder
+    AS-->>R: 返回结果
+    
+    alt mAttachedScrap中未找到
+        R->>CV: 查找position匹配的ViewHolder
+        CV-->>R: 返回结果
+        
+        alt mCachedViews中未找到
+            alt Adapter使用稳定ID
+                R->>CV: 查找ID匹配的ViewHolder
+                CV-->>R: 返回结果
+            end
+            
+            alt 未找到匹配ID的ViewHolder
+                R->>VCE: getViewForPositionAndType
+                VCE-->>R: 返回View(如果有)
+                
+                alt ViewCacheExtension中未找到
+                    R->>RVP: getRecycledView(viewType)
+                    RVP-->>R: 返回ViewHolder(如果有)
+                    
+                    alt RecycledViewPool中未找到
+                        R->>A: createViewHolder(viewType)
+                        A-->>R: 返回新创建的ViewHolder
+                        R->>A: bindViewHolder(holder, position)
+                    else 从RecycledViewPool获取成功
+                        R->>R: 重置ViewHolder
+                        R->>A: bindViewHolder(holder, position)
+                    end
+                end
+            end
+        end
+    end
+    
+    R-->>LM: 返回itemView
+    deactivate R
+```
+
 ## 详细获取流程
 
 ### 1. tryGetViewHolderForPositionByDeadline方法
@@ -274,3 +325,35 @@ mRecyclerView.setViewCacheExtension(new ViewCacheExtension() {
 RecyclerView从RecycledViewPool获取ViewHolder的过程是一个多级缓存查找的过程。这种设计既保证了性能，又提供了足够的灵活性，使RecyclerView能够高效地处理各种列表展示需求。
 
 理解这一过程对于优化RecyclerView性能和解决复用相关的问题至关重要。通过合理配置缓存参数、实现正确的Adapter方法和利用预取机制，可以进一步提升RecyclerView的性能，为用户提供更加流畅的列表体验。 
+
+```mermaid
+flowchart TD
+    Start([滑动需要显示新项]) --> A{预取缓存中是否有?}
+    A -->|是| B[使用预取的ViewHolder]
+    A -->|否| C{从缓存获取流程}
+    
+    subgraph 获取ViewHolder优化策略
+        C --> D{是否使用预取机制?}
+        D -->|是| E[GapWorker预取策略]
+        E --> F[空闲时预取即将显示的项]
+        F --> G[减少滑动时的卡顿]
+        
+        D -->|否| H{多RecyclerView场景?}
+        H -->|是| I[共享RecycledViewPool]
+        I --> J[减少ViewHolder创建次数]
+        J --> K[降低内存占用]
+        
+        H -->|否| L{特殊布局需求?}
+        L -->|是| M[自定义ViewCacheExtension]
+        M --> N[针对特定场景优化缓存]
+        
+        L -->|否| O[调整mCachedViews大小]
+        O --> P[根据滑动模式优化缓存大小]
+    end
+    
+    B --> End([显示在屏幕上])
+    G --> End
+    K --> End
+    N --> End
+    P --> End
+``` 

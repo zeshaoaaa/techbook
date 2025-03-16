@@ -11,6 +11,38 @@ RecycledViewPool是一个用于存储和管理废弃ViewHolder的类，它按照
 3. **可共享**：多个RecyclerView可以共享同一个RecycledViewPool
 4. **需要重绑定**：从RecycledViewPool获取的ViewHolder需要重新绑定数据
 
+```mermaid
+classDiagram
+    class RecycledViewPool {
+        -SparseArray~ScrapData~ mScrap
+        +clear()
+        +setMaxRecycledViews(viewType, max)
+        +getRecycledView(viewType)
+        +putRecycledView(scrap)
+    }
+    
+    class ScrapData {
+        -ArrayList~ViewHolder~ mScrapHeap
+        -int mMaxScrap
+    }
+    
+    class SparseArray~ScrapData~ {
+        +get(key)
+        +put(key, value)
+        +size()
+        +valueAt(index)
+    }
+    
+    class ViewHolder {
+        +getItemViewType()
+        +resetInternal()
+    }
+    
+    RecycledViewPool *-- ScrapData : 内部类
+    RecycledViewPool o-- SparseArray~ScrapData~ : 存储不同ViewType的ScrapData
+    ScrapData o-- "0..mMaxScrap" ViewHolder : 存储相同类型的ViewHolder
+```
+
 ## RecycledViewPool源码分析
 
 ### 类结构
@@ -164,6 +196,40 @@ void resetInternal() {
 ```
 
 这个重置过程确保了ViewHolder不会保留之前绑定的数据和状态，避免了数据混乱。
+
+```mermaid
+flowchart TB
+    subgraph 放入流程
+        A[ViewHolder滑出屏幕] --> B[recycleViewHolderInternal]
+        B --> C{是否满足mCachedViews条件?}
+        C -->|否| D[addViewHolderToRecycledViewPool]
+        C -->|是| E{mCachedViews是否已满?}
+        E -->|是| F[将最旧的移出并加入回收池]
+        E -->|否| G[加入mCachedViews]
+        F --> G
+        D --> H[putRecycledView]
+        H --> I{获取ViewType对应的ScrapData}
+        I --> J{是否已达到最大容量?}
+        J -->|是| K[丢弃ViewHolder]
+        J -->|否| L[重置ViewHolder状态]
+        L --> M[添加到ScrapData.mScrapHeap]
+    end
+    
+    subgraph 获取流程
+        AA[需要ViewHolder] --> BB[tryGetViewHolderForPositionByDeadline]
+        BB --> CC{前面级别缓存命中?}
+        CC -->|是| DD[使用缓存ViewHolder]
+        CC -->|否| EE[getRecycledView]
+        EE --> FF{ScrapData存在且不为空?}
+        FF -->|否| GG[返回null]
+        FF -->|是| HH[从mScrapHeap末尾获取ViewHolder]
+        HH --> II[从RecycledViewPool移除该ViewHolder]
+        II --> JJ[返回ViewHolder]
+    end
+    
+    M -.-> AA
+    JJ -.-> A
+```
 
 ## RecycledViewPool的优化使用
 

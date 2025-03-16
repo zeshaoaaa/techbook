@@ -33,6 +33,54 @@ public final class Recycler {
 }
 ```
 
+```mermaid
+classDiagram
+    class RecyclerView {
+        -Recycler mRecycler
+        +setAdapter()
+        +setLayoutManager()
+    }
+    
+    class Recycler {
+        -ArrayList~ViewHolder~ mAttachedScrap
+        -ArrayList~ViewHolder~ mChangedScrap
+        -ArrayList~ViewHolder~ mCachedViews
+        -ViewCacheExtension mViewCacheExtension
+        -RecycledViewPool mRecyclerPool
+        -int mViewCacheMax
+        +getViewForPosition()
+        +recycleView()
+        +clear()
+    }
+    
+    class ViewHolder {
+        +itemView: View
+        +position: int
+        +id: long
+        +itemViewType: int
+        +isRecyclable()
+        +resetInternal()
+    }
+    
+    class RecycledViewPool {
+        -SparseArray~ScrapData~ mScrap
+        +putRecycledView()
+        +getRecycledView()
+        +clear()
+    }
+    
+    class ViewCacheExtension {
+        <<abstract>>
+        +getViewForPositionAndType()
+    }
+    
+    RecyclerView *-- Recycler : 内部类
+    Recycler o-- ViewHolder : 管理
+    Recycler o-- RecycledViewPool : 引用
+    Recycler o-- ViewCacheExtension : 可选引用
+    RecycledViewPool *-- "ScrapData" : 内部类
+```
+
 ## Recycler核心方法
 
 Recycler类中几个核心方法决定了RecyclerView的回收复用流程：
@@ -110,6 +158,29 @@ ViewHolder tryGetViewHolderForPositionByDeadline(int position, boolean dryRun, l
 }
 ```
 
+```mermaid
+flowchart TD
+    A[开始获取ViewHolder] --> B{检查mAttachedScrap和mChangedScrap}
+    B -->|找到| C[返回ViewHolder]
+    B -->|未找到| D{检查是否有稳定ID}
+    
+    D -->|是| E{通过ID查找ViewHolder}
+    E -->|找到| C
+    E -->|未找到| F{检查ViewCacheExtension}
+    
+    D -->|否| F
+    
+    F -->|找到| C
+    F -->|未找到或未设置| G{从RecycledViewPool获取}
+    
+    G -->|找到| H[重置ViewHolder] --> C
+    G -->|未找到| I[创建新ViewHolder]
+    
+    I --> J[绑定数据] --> C
+    
+    C --> K[结束]
+```
+
 ### 3. recycleView与scrapView
 
 Recycler负责两种主要的回收操作：
@@ -152,3 +223,42 @@ Recycler并不直接决定何时回收和获取ViewHolder，这由LayoutManager�
 Recycler作为RecyclerView的核心组件，通过精心设计的多级缓存结构和高效的获取复用流程，实现了ViewHolder的高效回收与复用，是RecyclerView高性能的关键所在。
 
 在下一节中，我们将详细分析Recycler的四级缓存结构的具体实现和工作机制。 
+
+```mermaid
+sequenceDiagram
+    participant RV as RecyclerView
+    participant LM as LayoutManager
+    participant R as Recycler
+    participant A as Adapter
+    participant VP as RecycledViewPool
+    
+    RV->>LM: onLayoutChildren()
+    activate LM
+    
+    LM->>R: getViewForPosition(pos)
+    activate R
+    
+    alt 在缓存中找到
+        R->>R: 从缓存获取ViewHolder
+    else 缓存未命中
+        R->>A: createViewHolder()
+        A-->>R: 返回新ViewHolder
+        R->>A: bindViewHolder()
+    end
+    
+    R-->>LM: 返回itemView
+    deactivate R
+    
+    LM->>LM: 添加和布局View
+    
+    loop 对于滑出屏幕的View
+        LM->>R: recycleView(view)
+        activate R
+        R->>R: 检查ViewHolder状态
+        R->>VP: 放入回收池
+        deactivate R
+    end
+    
+    LM-->>RV: 布局完成
+    deactivate LM
+``` 

@@ -19,33 +19,116 @@ ItemTouchHelper itemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.Callba
 itemTouchHelper.attachToRecyclerView(recyclerView);
 ```
 
-## ItemTouchHelper类结构
+## ItemTouchHelper类结构和工作流程
 
-从类的结构上看，ItemTouchHelper的设计遵循了回调模式：
-
-```java
-public class ItemTouchHelper extends RecyclerView.ItemDecoration
-        implements RecyclerView.OnChildAttachStateChangeListener {
-    
-    // 核心回调接口
-    public abstract static class Callback {
-        // 必须实现的方法
-        public abstract int getMovementFlags(RecyclerView recyclerView, 
-                                           RecyclerView.ViewHolder viewHolder);
-        public abstract boolean onMove(RecyclerView recyclerView, 
-                                     RecyclerView.ViewHolder viewHolder, 
-                                     RecyclerView.ViewHolder target);
-        public abstract void onSwiped(RecyclerView.ViewHolder viewHolder, int direction);
-        
-        // 可选的方法
-        public boolean isLongPressDragEnabled() { return true; }
-        public boolean isItemViewSwipeEnabled() { return true; }
-        // ...
+```mermaid
+classDiagram
+    class RecyclerView.ItemDecoration {
+        <<abstract>>
+        +onDraw()
+        +onDrawOver()
     }
     
-    // 其他成员和方法
-    // ...
-}
+    class RecyclerView.OnChildAttachStateChangeListener {
+        <<interface>>
+        +onChildViewAttachedToWindow()
+        +onChildViewDetachedFromWindow()
+    }
+    
+    class ItemTouchHelper {
+        -mRecyclerView
+        -mCallback
+        -mSelected
+        +attachToRecyclerView()
+        -select()
+        -swipeIfNecessary()
+        -findAnimation()
+        -endRecoverAnimation()
+    }
+    
+    class Callback {
+        <<abstract>>
+        +getMovementFlags()
+        +onMove()
+        +onSwiped()
+        +isLongPressDragEnabled()
+        +isItemViewSwipeEnabled()
+        +onSelectedChanged()
+        +clearView()
+    }
+    
+    class SimpleCallback {
+        -mDefaultSwipeDirs
+        -mDefaultDragDirs
+        +SimpleCallback(dragDirs, swipeDirs)
+        +getMovementFlags()
+    }
+    
+    RecyclerView.ItemDecoration <|-- ItemTouchHelper
+    RecyclerView.OnChildAttachStateChangeListener <|.. ItemTouchHelper
+    ItemTouchHelper *-- Callback
+    Callback <|-- SimpleCallback
+```
+
+```mermaid
+flowchart TD
+    A[用户触摸RecyclerView上的Item] --> B{触摸类型?}
+    B -->|长按| C{是否允许拖拽?}
+    B -->|滑动| D{是否允许滑动?}
+    
+    C -->|是| E[开始拖拽]
+    C -->|否| A
+    D -->|是| F[开始滑动]
+    D -->|否| A
+    
+    E --> G[调用onSelectedChanged]
+    F --> G
+    
+    G --> H{用户操作类型?}
+    H -->|拖拽中| I[计算目标位置]
+    H -->|滑动中| J[计算滑动距离和方向]
+    
+    I --> K[移动Item视图]
+    J --> L[显示滑动效果]
+    
+    K -->|松开| M{是否有目标位置变化?}
+    L -->|松开| N{是否滑动超过阈值?}
+    
+    M -->|是| O[调用onMove]
+    M -->|否| P[恢复原位]
+    N -->|是| Q[调用onSwiped]
+    N -->|否| P
+    
+    O --> R[调用clearView]
+    P --> R
+    Q --> R
+    
+    R --> S[结束交互]
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> 空闲: 初始状态
+    空闲 --> 拖拽中: 长按触发拖拽
+    空闲 --> 滑动中: 左右滑动触发
+    
+    拖拽中 --> 空闲: 取消拖拽
+    拖拽中 --> 拖拽结束: 松开手指
+    拖拽结束 --> 空闲: 回调onMove
+    
+    滑动中 --> 空闲: 滑动距离不足
+    滑动中 --> 滑动结束: 滑动超过阈值
+    滑动结束 --> 空闲: 回调onSwiped
+    
+    note right of 拖拽中
+        移动Item视图
+        计算目标位置
+    end note
+    
+    note right of 滑动中
+        显示滑动效果
+        计算滑动方向
+    end note
 ```
 
 ## 核心工作原理
