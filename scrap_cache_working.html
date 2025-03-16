@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RecyclerView核心机制 - Scrap缓存工作原理</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #ffffff;
+    }
+    
+    .container {
+      width: 800px;
+      height: 600px;
+      position: relative;
+    }
+    
+    .title {
+      font-size: 22px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .subtitle {
+      font-size: 14px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 5px;
+    }
+    
+    .phones-container {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 30px;
+    }
+    
+    .phone-frame {
+      width: 160px;
+      height: 280px;
+      background-color: #f0f0f0;
+      border: 2px solid #555;
+      border-radius: 15px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 25px;
+    }
+    
+    .stage-label {
+      position: absolute;
+      top: -30px;
+      width: 100%;
+      text-align: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    
+    .recyclerview {
+      width: 140px;
+      height: 230px;
+      background-color: #e5f5ff;
+      border: 1.5px solid #3498db;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 5px;
+    }
+    
+    .rv-label {
+      font-size: 10px;
+      margin-bottom: 5px;
+    }
+    
+    .item {
+      width: 120px;
+      height: 35px;
+      background-color: #fff;
+      border: 1px solid #555;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+    }
+    
+    .item-changed {
+      width: 120px;
+      height: 35px;
+      background-color: #ffe0e0;
+      border: 1px solid #d35400;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+    }
+    
+    .transition-text {
+      margin-top: 50px;
+      text-align: center;
+      font-size: 12px;
+    }
+    
+    .caches-container {
+      display: flex;
+      justify-content: center;
+      gap: 60px;
+      margin-top: 30px;
+    }
+    
+    .attached-scrap {
+      width: 150px;
+      height: 120px;
+      background-color: #e6f2ff;
+      border: 1.5px solid #3498db;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 15px;
+    }
+    
+    .changed-scrap {
+      width: 150px;
+      height: 100px;
+      background-color: #fff0e5;
+      border: 1.5px solid #d35400;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 15px;
+    }
+    
+    .cache-item {
+      width: 130px;
+      height: 25px;
+      background-color: #fff;
+      border: 1px solid #555;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+    }
+    
+    .cache-item-changed {
+      width: 130px;
+      height: 25px;
+      background-color: #ffe0e0;
+      border: 1px solid #d35400;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+    }
+    
+    .cache-label {
+      position: absolute;
+      top: -25px;
+      width: 100%;
+      text-align: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    
+    .svg-arrows {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    
+    .footnotes {
+      margin-top: 20px;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">mAttachedScrap和mChangedScrap工作原理</h1>
+    
+    <div class="phones-container">
+      <!-- 预布局阶段 -->
+      <div class="phone-frame">
+        <div class="stage-label">预布局阶段</div>
+        <div class="recyclerview">
+          <div class="rv-label">RecyclerView</div>
+          <div class="item">Item 1</div>
+          <div class="item">Item 2</div>
+          <div class="item-changed">Item 3 (已改变)</div>
+          <div class="item">Item 4</div>
+        </div>
+      </div>
+      
+      <!-- 过渡阶段 -->
+      <div class="phone-frame">
+        <div class="stage-label">过渡阶段</div>
+        <div class="recyclerview">
+          <div class="rv-label">RecyclerView</div>
+          <div class="transition-text">
+            临时detach<br>所有Items
+          </div>
+        </div>
+      </div>
+      
+      <!-- 后布局阶段 -->
+      <div class="phone-frame">
+        <div class="stage-label">后布局阶段</div>
+        <div class="recyclerview">
+          <div class="rv-label">RecyclerView</div>
+          <div class="item">Item 1</div>
+          <div class="item">Item 2</div>
+          <div class="item">Item 4</div>
+          <div style="font-size: 10px; margin-top: 10px;">Item 3已移除</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 缓存容器 -->
+    <div class="caches-container">
+      <!-- mAttachedScrap -->
+      <div class="attached-scrap">
+        <div class="cache-label">mAttachedScrap</div>
+        <div class="cache-item">Item 1</div>
+        <div class="cache-item">Item 2</div>
+        <div class="cache-item">Item 4</div>
+      </div>
+      
+      <!-- mChangedScrap -->
+      <div class="changed-scrap">
+        <div class="cache-label">mChangedScrap</div>
+        <div class="cache-item-changed">Item 3 (已改变)</div>
+      </div>
+    </div>
+    
+    <!-- SVG箭头 -->
+    <svg class="svg-arrows" xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+      <!-- 定义箭头标记 -->
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+          <polygon points="0 0, 10 4, 0 8" fill="#333" />
+        </marker>
+      </defs>
+      
+      <!-- 手机阶段之间的连接箭头 -->
+      <!-- 从预布局阶段到过渡阶段的箭头 -->
+      <path d="M169,180 L315,180" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- 从过渡阶段到后布局阶段的箭头 -->
+      <path d="M399,180 L505,180" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- 从预布局Items到缓存的连接线 -->
+      <!-- Item 1 到 mAttachedScrap 的第一个Item -->
+      <path d="M140,65 C100,160 100,400 220,455" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- Item 2 到 mAttachedScrap 的第二个Item -->
+      <path d="M140,110 C100,200 120,420 220,480" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- Item 3(已改变) 到 mChangedScrap -->
+      <path d="M140,155 C100,250 350,440 430,470" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- Item 4 到 mAttachedScrap 的第三个Item -->
+      <path d="M140,200 C100,280 140,430 220,505" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- 从缓存回到后布局阶段的连接线 -->
+      <!-- 从mAttachedScrap的Item 1到后布局的Item 1 -->
+      <path d="M350,455 C450,400 500,100 510,65" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- 从mAttachedScrap的Item 2到后布局的Item 2 -->
+      <path d="M350,480 C450,420 500,150 510,110" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- 从mAttachedScrap的Item 4到后布局的Item 4(之前的Item 3被移除) -->
+      <path d="M350,505 C450,440 500,200 510,155" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" />
+      
+      <!-- 从mChangedScrap到"Item 3已移除"的提示文本 (虚线表示Item被移除) -->
+      <path d="M550,470 C590,390 590,200 550,195" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" stroke-dasharray="5,3" />
+    </svg>
+    
+    <div class="footnotes">
+      ① 布局准备阶段：所有Items临时detach并根据状态分配到对应Scrap缓存<br>
+      ② 布局执行阶段：从Scrap缓存中获取ViewHolder进行复用，完成布局后清空缓存
+    </div>
+  </div>
+</body>
+</html> 
